@@ -31,12 +31,23 @@ async fn main() -> Result<()> {
 
 async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
     let buf_reader = BufReader::new(&mut stream);
-    let request_line = buf_reader.lines().next_line().await?.unwrap();
+    let mut lines = buf_reader.lines();
 
-    let status_line = match request_line.as_str() {
-        "GET / HTTP/1.1" => "HTTP/1.1 200 OK",
-        _ => "HTTP/1.1 404 NOT FOUND",
+    let request_line = lines.next_line().await?.unwrap();
+    let request_line: Vec<&str> = request_line.split_whitespace().collect();
+    let status_line = match request_line[1] {
+        "/" => "HTTP/1.1 200 OK",
+        _ => "HTTP/1.1 404 Not Found",
     };
+
+    let mut headers = Vec::new();
+    while let Some(line) = lines.next_line().await? {
+        if line.len() == 0 {
+            break;
+        }
+
+        headers.push(line);
+    }
 
     let response = format!("{status_line}\r\n\r\n");
     let response = Bytes::from(response);
