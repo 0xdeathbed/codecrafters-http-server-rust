@@ -32,10 +32,10 @@ impl HttpResponseBuilder {
         }
     }
 
-    pub fn add_body_with_req_headers(&mut self, body: &str) {
+    pub fn add_body_with_req_headers(&mut self, body: &str, body_type: &str) {
         self.body = body.to_string();
 
-        self.add_header("Content-Type".to_string(), "text/plain".to_string());
+        self.add_header("Content-Type".to_string(), body_type.to_string());
         self.add_header("Content-Length".to_string(), format!("{}", self.body.len()));
     }
 
