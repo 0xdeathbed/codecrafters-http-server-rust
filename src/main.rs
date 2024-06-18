@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+mod http;
 
 use anyhow::Result;
-use bytes::Bytes;
+use http::{HttpResponseBuilder, HttpStatus};
+use std::collections::HashMap;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
@@ -31,11 +32,6 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-enum HttpStatus {
-    Ok,
-    NotFound,
-}
-
 async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
     let buf_reader = BufReader::new(&mut stream);
     let mut lines = buf_reader.lines();
@@ -58,45 +54,25 @@ async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
 
         req_headers.insert(kv_pair[0].to_string(), kv_pair[1].to_string());
     }
-    let mut response_headers = String::new();
-    let mut response_body = String::new();
-    let status = match request_line[1] {
-        "/" => HttpStatus::Ok,
+
+    let mut response_http = HttpResponseBuilder::new();
+    match request_line[1] {
+        "/" => response_http.add_status(HttpStatus::Ok),
         "/user-agent" => {
             if let Some(user_agent) = req_headers.get("User-Agent") {
-                response_headers.push_str(&headers_based_on_body(&user_agent));
-                response_body.push_str(user_agent);
+                response_http.add_body_with_req_headers(&user_agent);
             }
-
-            HttpStatus::Ok
         }
         echo if echo.starts_with("/echo") => {
             let echo = echo.replace("/echo/", "");
-            response_headers.push_str(&headers_based_on_body(&echo));
-
-            response_body.push_str(&echo);
-
-            HttpStatus::Ok
+            response_http.add_body_with_req_headers(&echo);
         }
-        _ => HttpStatus::NotFound,
+        _ => response_http.add_status(HttpStatus::NotFound),
     };
 
-    let status_line = match status {
-        HttpStatus::Ok => "200 OK",
-        HttpStatus::NotFound => "404 Not Found",
-    };
-
-    let response = format!("HTTP/1.1 {status_line}\r\n{response_headers}\r\n{response_body}");
-    let response = Bytes::from(response);
+    let response = response_http.build().convert_to_bytes();
 
     stream.write_all(&response).await?;
 
     Ok(())
-}
-
-fn headers_based_on_body(body: &str) -> String {
-    format!(
-        "Content-Type: text/plain\r\nContent-Length: {}\r\n",
-        body.len()
-    )
 }
