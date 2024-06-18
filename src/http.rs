@@ -4,6 +4,9 @@ use std::collections::HashMap;
 pub enum HttpStatus {
     Ok,
     NotFound,
+    NotImplemented,
+    Created,
+    InternalServerError,
 }
 
 impl ToString for HttpStatus {
@@ -11,6 +14,9 @@ impl ToString for HttpStatus {
         match self {
             HttpStatus::Ok => "200 OK".to_string(),
             HttpStatus::NotFound => "404 Not Found".to_string(),
+            HttpStatus::NotImplemented => "501 Not Implemented".to_string(),
+            HttpStatus::Created => "201 Created".to_string(),
+            HttpStatus::InternalServerError => "500 Internal Server Error".to_string(),
         }
     }
 }
