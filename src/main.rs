@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Result;
 use bytes::Bytes;
 use tokio::{
@@ -29,6 +31,11 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+enum HttpStatus {
+    Ok,
+    NotFound,
+}
+
 async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
     let buf_reader = BufReader::new(&mut stream);
     let mut lines = buf_reader.lines();
@@ -36,30 +43,48 @@ async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
     let request_line = lines.next_line().await?.unwrap();
     let request_line: Vec<&str> = request_line.split_whitespace().collect();
 
-    let mut response_headers = String::new();
-    let mut response_body = String::new();
-    let status_line = match request_line[1] {
-        "/" => "200 OK",
-        echo if echo.starts_with("/echo") => {
-            let echo = echo.replace("/echo/", "");
-            response_headers.push_str(&format!("Content-Type: text/plain\r\n"));
-            response_headers.push_str(&format!("Content-Length: {}\r\n", echo.len()));
-
-            response_body.push_str(&echo);
-
-            "200 OK"
-        }
-        _ => "404 Not Found",
-    };
-
-    let mut headers = Vec::new();
+    let mut req_headers: HashMap<String, String> = HashMap::new();
     while let Some(line) = lines.next_line().await? {
         if line.len() == 0 {
             break;
         }
 
-        headers.push(line);
+        let kv_pair: Vec<&str> = line
+            .split(':')
+            .collect::<Vec<&str>>()
+            .iter()
+            .map(|s| s.trim())
+            .collect();
+
+        req_headers.insert(kv_pair[0].to_string(), kv_pair[1].to_string());
     }
+    let mut response_headers = String::new();
+    let mut response_body = String::new();
+    let status = match request_line[1] {
+        "/" => HttpStatus::Ok,
+        "/user-agent" => {
+            if let Some(user_agent) = req_headers.get("User-Agent") {
+                response_headers.push_str(&headers_based_on_body(&user_agent));
+                response_body.push_str(user_agent);
+            }
+
+            HttpStatus::Ok
+        }
+        echo if echo.starts_with("/echo") => {
+            let echo = echo.replace("/echo/", "");
+            response_headers.push_str(&headers_based_on_body(&echo));
+
+            response_body.push_str(&echo);
+
+            HttpStatus::Ok
+        }
+        _ => HttpStatus::NotFound,
+    };
+
+    let status_line = match status {
+        HttpStatus::Ok => "200 OK",
+        HttpStatus::NotFound => "404 Not Found",
+    };
 
     let response = format!("HTTP/1.1 {status_line}\r\n{response_headers}\r\n{response_body}");
     let response = Bytes::from(response);
@@ -67,4 +92,11 @@ async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
     stream.write_all(&response).await?;
 
     Ok(())
+}
+
+fn headers_based_on_body(body: &str) -> String {
+    format!(
+        "Content-Type: text/plain\r\nContent-Length: {}\r\n",
+        body.len()
+    )
 }
