@@ -7,14 +7,16 @@ use tokio::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("Logs from your program will appear here!");
-
     let listener = TcpListener::bind("127.0.0.1:4221").await?;
 
+    println!(
+        "Server Started listening on {}",
+        listener.local_addr()?.to_string()
+    );
     loop {
         match listener.accept().await {
-            Ok((stream, _socketaddr)) => {
-                println!("accepted new connection");
+            Ok((stream, socketaddr)) => {
+                println!("{} Connected", socketaddr.to_string());
                 handle_http_response(stream).await?;
             }
             Err(e) => {
@@ -32,11 +34,12 @@ async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
     let request_line = buf_reader.lines().next_line().await?.unwrap();
 
     let status_line = match request_line.as_str() {
-        "GET / HTTP/1.1" => "HTTP/1.1 200 OK\r\n\r\n",
-        _ => "",
+        "GET / HTTP/1.1" => "HTTP/1.1 200 OK",
+        _ => "HTTP/1.1 404 NOT FOUND",
     };
 
-    let response = Bytes::from(status_line);
+    let response = format!("{status_line}\r\n\r\n");
+    let response = Bytes::from(response);
 
     stream.write_all(&response).await?;
 
