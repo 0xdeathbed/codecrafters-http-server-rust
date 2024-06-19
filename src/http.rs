@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub enum HttpStatus {
     Ok,
@@ -26,6 +26,8 @@ pub struct HttpResponseBuilder {
     headers: HashMap<String, String>,
     body: String,
     response: String,
+    is_compression: bool,
+    supported_compression: HashSet<&'static str>,
 }
 
 impl HttpResponseBuilder {
@@ -35,22 +37,31 @@ impl HttpResponseBuilder {
             response: String::new(),
             headers: HashMap::new(),
             body: String::new(),
+            is_compression: false,
+            supported_compression: HashSet::from(["gzip"]),
         }
     }
 
-    pub fn add_body_with_req_headers(&mut self, body: &str, body_type: &str) {
+    pub fn add_body_with_req_headers(&mut self, body: &str, media_type: &str) {
         self.body = body.to_string();
 
-        self.add_header("Content-Type".to_string(), body_type.to_string());
-        self.add_header("Content-Length".to_string(), format!("{}", self.body.len()));
+        self.add_header("Content-Type", media_type);
+        self.add_header("Content-Length", &format!("{}", self.body.len()));
+    }
+
+    pub fn enable_compression(&mut self, compression_scheme: &str) {
+        if self.supported_compression.contains(compression_scheme) {
+            self.is_compression = true;
+            self.add_header("Content-Encoding", compression_scheme);
+        }
     }
 
     pub fn add_status(&mut self, status: HttpStatus) {
         self.status_line = status;
     }
 
-    pub fn add_header(&mut self, key: String, value: String) {
-        self.headers.insert(key, value);
+    pub fn add_header(&mut self, key: &str, value: &str) {
+        self.headers.insert(key.to_string(), value.to_string());
     }
 
     fn res_headers(&self) -> String {
@@ -61,7 +72,16 @@ impl HttpResponseBuilder {
         headers
     }
 
-    pub fn build(&mut self) -> &Self {
+    pub fn compress(&mut self) {
+        self.headers
+            .insert("Content-Length".to_string(), format!("{}", self.body.len()));
+    }
+
+    pub fn build(&mut self) -> Bytes {
+        if self.is_compression {
+            self.compress();
+        }
+
         self.response = format!(
             "HTTP/1.1 {}\r\n{}\r\n{}",
             self.status_line.to_string(),
@@ -69,10 +89,6 @@ impl HttpResponseBuilder {
             self.body
         );
 
-        self
-    }
-
-    pub fn convert_to_bytes(&self) -> Bytes {
         Bytes::from(self.response.clone())
     }
 }

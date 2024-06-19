@@ -69,6 +69,16 @@ async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
 
     let mut response_http = HttpResponseBuilder::new();
 
+    let compression = req_headers.get("Accept-Encoding");
+    if let Some(compression_scheme) = compression {
+        response_http.enable_compression(&compression_scheme);
+    }
+
+    let media_type = if let Some(media_type) = req_headers.get("Content-Type") {
+        media_type
+    } else {
+        "text/plain"
+    };
     match request_line[0] {
         "GET" => match request_line[1] {
             "/" => response_http.add_status(HttpStatus::Ok),
@@ -81,7 +91,8 @@ async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
             }
             echo if echo.starts_with("/echo") => {
                 let echo = echo.replace("/echo/", "");
-                response_http.add_body_with_req_headers(&echo, "text/plain");
+
+                response_http.add_body_with_req_headers(&echo, media_type);
 
                 response_http.add_status(HttpStatus::Ok)
             }
@@ -108,21 +119,19 @@ async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
                 let filename = files.replace("/files/", "");
                 let file_path = PathBuf::from(format!("{directory}/{filename}"));
 
-                match req_headers.get("Content-Type") {
-                    Some(a) if a == "application/octet-stream" => {
-                        println!("________");
-                        let mut file = OpenOptions::new()
-                            .write(true)
-                            .truncate(true)
-                            .create(true)
-                            .open(file_path)
-                            .await?;
+                if media_type == "application/octet-stream" {
+                    let mut file = OpenOptions::new()
+                        .write(true)
+                        .truncate(true)
+                        .create(true)
+                        .open(file_path)
+                        .await?;
 
-                        file.write(req_body.as_bytes()).await?;
+                    file.write(req_body.as_bytes()).await?;
 
-                        response_http.add_status(HttpStatus::Created)
-                    }
-                    Some(_) | None => response_http.add_status(HttpStatus::InternalServerError),
+                    response_http.add_status(HttpStatus::Created);
+                } else {
+                    response_http.add_status(HttpStatus::InternalServerError);
                 }
             }
             _ => response_http.add_status(HttpStatus::NotFound),
@@ -130,7 +139,7 @@ async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
         _ => response_http.add_status(HttpStatus::NotImplemented),
     }
 
-    let response = response_http.build().convert_to_bytes();
+    let response = response_http.build();
 
     stream.write_all(&response).await?;
 
