@@ -50,9 +50,16 @@ impl HttpResponseBuilder {
     }
 
     pub fn enable_compression(&mut self, compression_scheme: &str) {
-        if self.supported_compression.contains(compression_scheme) {
-            self.is_compression = true;
-            self.add_header("Content-Encoding", compression_scheme);
+        match compression_scheme
+            .split(",")
+            .map(|v| v.trim())
+            .find(|v| self.supported_compression.contains(v))
+        {
+            Some(scheme) => {
+                self.is_compression = true;
+                self.add_header("Content-Encoding", scheme);
+            }
+            None => {}
         }
     }
 
