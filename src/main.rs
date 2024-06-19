@@ -139,7 +139,7 @@ async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
         _ => response_http.add_status(HttpStatus::NotImplemented),
     }
 
-    let response = response_http.build();
+    let response = response_http.build().await?;
 
     stream.write_all(&response).await?;
 

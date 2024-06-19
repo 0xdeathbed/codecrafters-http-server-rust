@@ -1,5 +1,14 @@
+use anyhow::Result;
 use bytes::Bytes;
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
+use tokio::{
+    fs::{remove_file, OpenOptions},
+    io::AsyncWriteExt,
+    process::Command,
+};
 
 pub enum HttpStatus {
     Ok,
@@ -26,7 +35,7 @@ pub struct HttpResponseBuilder {
     headers: HashMap<String, String>,
     body: String,
     response: String,
-    is_compression: bool,
+    compression_detail: (bool, String),
     supported_compression: HashSet<&'static str>,
 }
 
@@ -37,7 +46,7 @@ impl HttpResponseBuilder {
             response: String::new(),
             headers: HashMap::new(),
             body: String::new(),
-            is_compression: false,
+            compression_detail: (false, String::new()),
             supported_compression: HashSet::from(["gzip"]),
         }
     }
@@ -56,7 +65,8 @@ impl HttpResponseBuilder {
             .find(|v| self.supported_compression.contains(v))
         {
             Some(scheme) => {
-                self.is_compression = true;
+                self.compression_detail.0 = true;
+                self.compression_detail.1 = scheme.to_string();
                 self.add_header("Content-Encoding", scheme);
             }
             None => {}
@@ -79,14 +89,39 @@ impl HttpResponseBuilder {
         headers
     }
 
-    pub fn compress(&mut self) {
+    pub async fn compress(&mut self) -> Result<()> {
+        let temp_file_path = "/tmp/tmp_compress";
+        let mut temp = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(temp_file_path)
+            .await?;
+        temp.write(self.body.as_bytes()).await?;
+
+        match self.compression_detail.1.as_str() {
+            "gzip" => {
+                let gzip_output = Command::new("gzip")
+                    .args(["-c", "-n", temp_file_path])
+                    .output()
+                    .await?;
+
+                self.body = unsafe { String::from_utf8_unchecked(gzip_output.stdout) }
+            }
+            _ => {}
+        }
+
+        remove_file(Path::new(temp_file_path)).await?;
+
         self.headers
             .insert("Content-Length".to_string(), format!("{}", self.body.len()));
+
+        Ok(())
     }
 
-    pub fn build(&mut self) -> Bytes {
-        if self.is_compression {
-            self.compress();
+    pub async fn build(&mut self) -> Result<Bytes> {
+        if self.compression_detail.0 {
+            self.compress().await?;
         }
 
         self.response = format!(
@@ -96,6 +131,6 @@ impl HttpResponseBuilder {
             self.body
         );
 
-        Bytes::from(self.response.clone())
+        Ok(Bytes::from(self.response.clone()))
     }
 }
