@@ -66,8 +66,7 @@ impl HttpResponseBuilder {
             .map(|v| v.trim())
             .find(|v| self.supported_compression.contains(v))
         {
-            self.compression_detail.0 = true;
-            self.compression_detail.1 = scheme.to_string();
+            self.compression_detail = (true, scheme.to_string());
             self.add_header("Content-Encoding", scheme);
         }
     }
