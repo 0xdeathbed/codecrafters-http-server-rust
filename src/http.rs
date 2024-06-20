@@ -2,6 +2,7 @@ use anyhow::Result;
 use bytes::Bytes;
 use std::{
     collections::{HashMap, HashSet},
+    fmt::Display,
     path::Path,
 };
 use tokio::{
@@ -18,15 +19,16 @@ pub enum HttpStatus {
     InternalServerError,
 }
 
-impl ToString for HttpStatus {
-    fn to_string(&self) -> String {
-        match self {
+impl Display for HttpStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
             HttpStatus::Ok => "200 OK".to_string(),
             HttpStatus::NotFound => "404 Not Found".to_string(),
             HttpStatus::NotImplemented => "501 Not Implemented".to_string(),
             HttpStatus::Created => "201 Created".to_string(),
             HttpStatus::InternalServerError => "500 Internal Server Error".to_string(),
-        }
+        };
+        write!(f, "{}", value)
     }
 }
 
@@ -59,17 +61,14 @@ impl HttpResponseBuilder {
     }
 
     pub fn enable_compression(&mut self, compression_scheme: &str) {
-        match compression_scheme
-            .split(",")
+        if let Some(scheme) = compression_scheme
+            .split(',')
             .map(|v| v.trim())
             .find(|v| self.supported_compression.contains(v))
         {
-            Some(scheme) => {
-                self.compression_detail.0 = true;
-                self.compression_detail.1 = scheme.to_string();
-                self.add_header("Content-Encoding", scheme);
-            }
-            None => {}
+            self.compression_detail.0 = true;
+            self.compression_detail.1 = scheme.to_string();
+            self.add_header("Content-Encoding", scheme);
         }
     }
 
@@ -97,18 +96,15 @@ impl HttpResponseBuilder {
             .write(true)
             .open(temp_file_path)
             .await?;
-        temp.write(self.body.as_bytes()).await?;
+        temp.write_all(self.body.as_bytes()).await?;
 
-        match self.compression_detail.1.as_str() {
-            "gzip" => {
-                let gzip_output = Command::new("gzip")
-                    .args(["-c", "-n", temp_file_path])
-                    .output()
-                    .await?;
+        if self.compression_detail.1.as_str() == "gzip" {
+            let gzip_output = Command::new("gzip")
+                .args(["-c", "-n", temp_file_path])
+                .output()
+                .await?;
 
-                self.body = unsafe { String::from_utf8_unchecked(gzip_output.stdout) }
-            }
-            _ => {}
+            self.body = unsafe { String::from_utf8_unchecked(gzip_output.stdout) }
         }
 
         remove_file(Path::new(temp_file_path)).await?;
@@ -126,7 +122,7 @@ impl HttpResponseBuilder {
 
         self.response = format!(
             "HTTP/1.1 {}\r\n{}\r\n{}",
-            self.status_line.to_string(),
+            self.status_line,
             self.res_headers(),
             self.body
         );

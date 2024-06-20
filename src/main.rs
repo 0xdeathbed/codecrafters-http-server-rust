@@ -13,18 +13,15 @@ use tokio::{
 #[tokio::main]
 async fn main() -> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:4221").await?;
-    println!(
-        "Server Started listening on {}",
-        listener.local_addr()?.to_string()
-    );
+    println!("Server Started listening on {}", listener.local_addr()?);
     loop {
         match listener.accept().await {
             Ok((stream, socketaddr)) => {
-                println!("{} Connected", socketaddr.to_string());
+                println!("{} Connected", socketaddr);
                 handle_http_response(stream).await?;
             }
             Err(e) => {
-                println!("error: {}", e);
+                eprintln!("error: {}", e);
                 break;
             }
         }
@@ -43,7 +40,7 @@ async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
 
     let request_line_headers = raw_request_parts[0].split("\r\n").collect_vec();
 
-    let req_body = raw_request_parts[1].trim().replace("\0", "");
+    let req_body = raw_request_parts[1].trim().replace('\0', "");
     let request_line = request_line_headers[0].split_whitespace().collect_vec();
 
     let mut req_headers: HashMap<String, String> = HashMap::new();
@@ -71,7 +68,7 @@ async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
 
     let compression = req_headers.get("Accept-Encoding");
     if let Some(compression_scheme) = compression {
-        response_http.enable_compression(&compression_scheme);
+        response_http.enable_compression(compression_scheme);
     }
 
     let media_type = if let Some(media_type) = req_headers.get("Content-Type") {
@@ -84,7 +81,7 @@ async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
             "/" => response_http.add_status(HttpStatus::Ok),
             "/user-agent" => {
                 if let Some(user_agent) = req_headers.get("User-Agent") {
-                    response_http.add_body_with_req_headers(&user_agent, "text/plain");
+                    response_http.add_body_with_req_headers(user_agent, "text/plain");
                 }
 
                 response_http.add_status(HttpStatus::Ok)
@@ -127,7 +124,7 @@ async fn handle_http_response(mut stream: TcpStream) -> Result<()> {
                         .open(file_path)
                         .await?;
 
-                    file.write(req_body.as_bytes()).await?;
+                    file.write_all(req_body.as_bytes()).await?;
 
                     response_http.add_status(HttpStatus::Created);
                 } else {
